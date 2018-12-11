@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 # coding=utf-8
 
-""" Return Codes:
-    0 == OK
-    1 == Wallpaper not found
-    3 == Running as root (don't)
+"""
+[*] Return Codes:
+0 == OK
+1 == Wallpaper not found
+3 == Running as root (don't)
+
+[*] TODO
+CHECK & SET permissions of all 'available' images,
+don't forget to set 'o+r' for the image that is used in the 'LightDM GTK greeter'
 """
 
 import curses
@@ -26,6 +31,20 @@ def clear_win(win) -> None:
     """
     win.clear()
     win.addstr(banner('Wall'), curses.color_pair(4))
+
+
+def get_lightdm() -> str:
+    """
+    A function that will return the path of the image that is used by the "LightDM GTK greeter"
+    :return: The full path to the image
+    """
+    conf = '/etc/lightdm/lightdm-gtk-greeter.conf'
+    with open(conf) as file:
+        for line in file:
+            if line.startswith('background'):
+                return line.strip().split(' ')[2]
+
+    raise LookupError("Couldn't fetch the background path from 'LightDM GTK greeter' config file!")
 
 
 def get_monitors() -> Generator[str, str, None]:
