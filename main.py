@@ -11,43 +11,64 @@ import curses
 from os import listdir, path, getuid
 from random import randint
 from subprocess import check_output, call
+from typing import List, Generator
 
-from utils import banner, pr
+from utils import banner, pr, is_image
 
-directory = '/home/maximus/wallpapers'
-
-
-def init_curses():
-    curses.use_default_colors()
-    curses.init_pair(2, curses.COLOR_RED, -1)
-    curses.init_pair(3, curses.COLOR_GREEN, -1)
-    curses.init_pair(4, curses.COLOR_BLUE, -1)
-    curses.init_pair(5, curses.COLOR_YELLOW, -1)
+DIRECTORY = '/home/maximus/wallpapers'
 
 
-def clear_win(win):
+def clear_win(win) -> None:
+    """
+    A simple function to clear the screen and print our banner :)
+    :param win: The curses window
+    :return: Nope
+    """
     win.clear()
     win.addstr(banner('Wall'), curses.color_pair(4))
 
 
-def get_monitors():
+def get_monitors() -> Generator[str, str, None]:
+    """
+    Runs xRandr to check which monitors are connected
+    :return: Monitor names
+    """
     for line in check_output('xrandr').decode().split('\n'):
         if 'connected' in line:
             yield line.split(' ')[0]
 
 
-def get_cmd(monitor_id: int):
+def get_cmd(monitor_id: int) -> List[str]:
+    """
+    The system command which will return path of monitor's wallpaper
+    """
+
     return ['xfconf-query', '-c', 'xfce4-desktop', '-p',
             '/backdrop/screen0/monitor%d/workspace0/last-image' % monitor_id]
 
 
-def apply(name, mon_id):
-    cmd = get_cmd(mon_id) + ['-s', path.join(directory, name)]
+def apply(name, mon_id) -> None:
+    """
+    The application function
+
+    :param name: Image name in the directory
+    :param mon_id: Desired monitor ID
+    """
+
+    cmd = get_cmd(mon_id) + ['-s', path.join(DIRECTORY, name)]
     call(cmd)
 
 
-def main(win):
-    init_curses()
+def main(win) -> None:
+    """
+    A Program to switch between wallpapers from a specified directory across various monitors
+    """
+    # Curses initialization
+    curses.use_default_colors()
+    curses.init_pair(2, curses.COLOR_RED, -1)
+    curses.init_pair(3, curses.COLOR_GREEN, -1)
+    curses.init_pair(4, curses.COLOR_BLUE, -1)
+    curses.init_pair(5, curses.COLOR_YELLOW, -1)
 
     mon_id = 0
     mons = tuple(get_monitors())
@@ -56,14 +77,18 @@ def main(win):
         clear_win(win)
 
         # Get current wallpaper path & available wallpapers
-        current = check_output(get_cmd(mon_id))[:-1].decode()
-        available = sorted([i for i in listdir(directory) if
-                            len([f for f in ('png', 'jpg', 'jpeg') if i.endswith('.' + f)])])
+        stream = bytes(check_output(get_cmd(mon_id)))
+        current = stream.strip().decode()
+
+        available = sorted([i for i in listdir(DIRECTORY) if is_image(path.join(DIRECTORY, i))])
+
+        current_name = path.split(current)[1]
         try:
-            cid = available.index(path.split(current)[1])
+            cid = available.index(current_name)
         except ValueError:
-            win.addstr('[X] Current wall not found in %s\n' % directory, curses.color_pair(2))
-            win.addstr('[+] Press [R] to reset to the first image from the supported directory', curses.color_pair(5))
+            win.addstr('[X] Current wall "%s" not found in %s\n' %
+                       (current_name, DIRECTORY), curses.color_pair(2))
+            win.addstr('[+] Press [R] to reset to the first image', curses.color_pair(5))
             if win.getkey() != 'r':
                 exit(1)
             cid = 0
@@ -78,27 +103,30 @@ def main(win):
                 win.addstr('[+] Using monitor: ')
                 win.addstr('%s\n' % mons[mon_id], curses.color_pair(3))
             win.addstr('[+] Current wall: ')
-            win.addstr('%s (%d/%d)' % (path.split(current)[1], cid + 1, len(available)), curses.color_pair(3))
+            win.addstr('%s (%d/%d)' % (path.split(current)[1], cid + 1,
+                                       len(available)), curses.color_pair(3))
 
-            o = str(win.getkey()).lower()
-            if not o:
+            key = str(win.getkey()).lower()
+            if not key:
                 continue
-
-            if o == 'r':
-                cid = randint(0, len(available))
-            elif o == 'key_left':
-                cid -= 1
-                if cid < 0:
-                    cid = len(available) - 1
-            elif o == 'key_right':
-                cid += 1
-                if cid >= len(available):
-                    cid = 0
-            elif o == 'm':
+            elif key in ('x', 'q'):
+                return
+            elif key == 'm':
                 mon_id += 1
                 if mon_id >= len(mons):
                     mon_id = 0
                 break  # Back to monitor loop
+
+            if key == 'r':
+                cid = randint(0, len(available))
+            elif key == 'key_left':
+                cid -= 1
+                if cid < 0:
+                    cid = len(available) - 1
+            elif key == 'key_right':
+                cid += 1
+                if cid >= len(available):
+                    cid = 0
 
             # Application
             current = available[cid]
@@ -113,7 +141,7 @@ if __name__ == '__main__':
     try:
         curses.wrapper(main)
     except KeyboardInterrupt:
-        pass  # Normal exit
+        pass
 
     except curses.error:
         pr('An curses error occurred!', 'X')
