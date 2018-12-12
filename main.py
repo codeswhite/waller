@@ -7,16 +7,17 @@
 1 == Wallpaper not found
 3 == Running as root (don't)
 
-[*] TODO
-CHECK & SET permissions of all 'available' images,
-don't forget to set 'o+r' for the image that is used in the 'LightDM GTK greeter'
+TODO:
+* Add ability to set the LDM lock screen wallpaper (possibly by pressing a specified key)
+* Add support for multiple LDM greeters (and DMs)
 """
 
 import curses
-from os import listdir, path, getuid
+import os
+import stat
 from random import randint
 from subprocess import check_output, call
-from typing import List, Generator
+from typing import List
 
 from utils import banner, pr, is_image
 
@@ -31,30 +32,6 @@ def clear_win(win) -> None:
     """
     win.clear()
     win.addstr(banner('Wall'), curses.color_pair(4))
-
-
-def get_lightdm() -> str:
-    """
-    A function that will return the path of the image that is used by the "LightDM GTK greeter"
-    :return: The full path to the image
-    """
-    conf = '/etc/lightdm/lightdm-gtk-greeter.conf'
-    with open(conf) as file:
-        for line in file:
-            if line.startswith('background'):
-                return line.strip().split(' ')[2]
-
-    raise LookupError("Couldn't fetch the background path from 'LightDM GTK greeter' config file!")
-
-
-def get_monitors() -> Generator[str, str, None]:
-    """
-    Runs xRandr to check which monitors are connected
-    :return: Monitor names
-    """
-    for line in check_output('xrandr').decode().split('\n'):
-        if 'connected' in line:
-            yield line.split(' ')[0]
 
 
 def get_cmd(monitor_id: int) -> List[str]:
@@ -74,7 +51,7 @@ def apply(name, mon_id) -> None:
     :param mon_id: Desired monitor ID
     """
 
-    cmd = get_cmd(mon_id) + ['-s', path.join(DIRECTORY, name)]
+    cmd = get_cmd(mon_id) + ['-s', os.path.join(DIRECTORY, name)]
     call(cmd)
 
 
@@ -89,19 +66,41 @@ def main(win) -> None:
     curses.init_pair(4, curses.COLOR_BLUE, -1)
     curses.init_pair(5, curses.COLOR_YELLOW, -1)
 
+    # Get available
+    available = sorted([i for i in os.listdir(DIRECTORY) if
+                        is_image(os.path.join(DIRECTORY, i))])
+
+    # Get LDM wallpaper
+    ldm = None
+    with open('/etc/lightdm/lightdm-gtk-greeter.conf') as file:
+        for line in file:
+            if line.startswith('background'):
+                ldm = line.strip().split(' ')[2]
+    assert ldm
+
+    # Set permissions to available
+    for wall in available:
+        path = os.path.join(DIRECTORY, wall)
+        perm = stat.S_IRUSR
+        if path == ldm:
+            perm |= stat.S_IROTH
+        os.chmod(path, perm)
+
+    # Check monitors
     mon_id = 0
-    mons = tuple(get_monitors())
+    mons = []
+    for line in check_output('xrandr').decode().split('\n'):
+        if 'connected' in line:
+            mons.append(line.split(' ')[0])
 
     while 1:  # Monitor l00p
         clear_win(win)
 
-        # Get current wallpaper path & available wallpapers
+        # Get current wallpaper
         stream = bytes(check_output(get_cmd(mon_id)))
         current = stream.strip().decode()
+        current_name = os.path.split(current)[1]
 
-        available = sorted([i for i in listdir(DIRECTORY) if is_image(path.join(DIRECTORY, i))])
-
-        current_name = path.split(current)[1]
         try:
             cid = available.index(current_name)
         except ValueError:
@@ -122,7 +121,7 @@ def main(win) -> None:
                 win.addstr('[+] Using monitor: ')
                 win.addstr('%s\n' % mons[mon_id], curses.color_pair(3))
             win.addstr('[+] Current wall: ')
-            win.addstr('%s (%d/%d)' % (path.split(current)[1], cid + 1,
+            win.addstr('%s (%d/%d)' % (os.path.split(current)[1], cid + 1,
                                        len(available)), curses.color_pair(3))
 
             key = str(win.getkey()).lower()
@@ -153,7 +152,7 @@ def main(win) -> None:
 
 
 if __name__ == '__main__':
-    if getuid() == 0:
+    if os.getuid() == 0:
         pr("This program shouldn't run as root!", 'X')
         exit(3)
 
