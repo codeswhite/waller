@@ -66,25 +66,23 @@ def main(win) -> None:
     curses.init_pair(4, curses.COLOR_BLUE, -1)
     curses.init_pair(5, curses.COLOR_YELLOW, -1)
 
-    # Get available
-    available = sorted([i for i in os.listdir(DIRECTORY) if
-                        is_image(os.path.join(DIRECTORY, i))])
-
-    # Get LDM wallpaper
+    # Get 'LDM GTK greeter' wallpaper
     ldm = None
     with open('/etc/lightdm/lightdm-gtk-greeter.conf') as file:
         for line in file:
             if line.startswith('background'):
                 ldm = line.strip().split(' ')[2]
-    assert ldm
 
-    # Set permissions to available
-    for wall in available:
+    # Get available & set permissions
+    available = []
+    for wall in os.listdir(DIRECTORY):
         path = os.path.join(DIRECTORY, wall)
-        perm = stat.S_IRUSR
-        if path == ldm:
-            perm |= stat.S_IROTH
-        os.chmod(path, perm)
+        if is_image(path):
+            available.append(wall)
+            perm = stat.S_IRUSR
+            if path == ldm:
+                perm |= stat.S_IROTH
+            os.chmod(path, perm)
 
     # Check monitors
     mon_id = 0
