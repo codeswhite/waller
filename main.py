@@ -15,7 +15,7 @@ import curses
 import os
 import stat
 from random import randint
-from subprocess import check_output, call
+from subprocess import check_output, check_call, call, CalledProcessError
 from typing import List, Generator, Tuple
 
 from utils import banner, pr, is_image
@@ -65,19 +65,27 @@ def get_ldm_bg() -> str:
     raise LookupError("[ERR] Couldn't find the LDM greeter's background!")
 
 
-def set_ldm_bg(win, ldm_bg_name, wall_name) -> None:
+def set_ldm_bg(win, ldm_bg_name, wall_name) -> bool:
     """
     Set the background image of the LDM's GTK greeter in the config file
+    :return: True on success
     """
     if ldm_bg_name == wall_name:
-        win.addstr('[X] Cannot change DM background to the same one!\n', curses.color_pair(2))
+        win.addstr('[!] Cannot change DM background to the same one!\n', curses.color_pair(5))
         win.getkey()
-    else:
-        win.addstr('[!] Replacement of the lock-screen background requires elevation\n',
-                   curses.color_pair(5))
-        call("sudo sed -i 's/%s/%s/g' " % (ldm_bg_name, wall_name) + LDM_GTK_CONF, shell=True)
-        win.addstr('[+] Lock-screen background replaced!\n', curses.color_pair(3))
+        return False
+
+    try:
+        check_call("sudo sed -i 's/%s/%s/g' " % (ldm_bg_name, wall_name) + LDM_GTK_CONF, shell=True)
+    except (KeyboardInterrupt, PermissionError, CalledProcessError):
+        win.addstr("[X] An external error occurred while change DM's background!\n",
+                   curses.color_pair(2))
         win.getkey()
+        return False
+
+    win.addstr('[+] Lock-screen background replaced!\n', curses.color_pair(3))
+    win.getkey()
+    return True
 
 
 def reset_permissions(avail: tuple, ldm_bg_path: str) -> None:
@@ -210,8 +218,11 @@ def main(win) -> None:
 
             # DM background
             elif key == 'l':
-                set_ldm_bg(win, os.path.split(ldm_bg_path)[1], available[current_id])
-                ldm_bg_path = get_ldm_bg()
+                new_bg = available[current_id]
+                if not set_ldm_bg(win, os.path.split(ldm_bg_path)[1], new_bg):
+                    continue
+
+                ldm_bg_path = os.path.join(DIRECTORY, new_bg)
                 reset_permissions(available, ldm_bg_path)
                 continue
 
