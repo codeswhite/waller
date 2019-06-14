@@ -8,6 +8,8 @@
 3 == Running as root (don't)
 
 TODO:
+* Add commands:
+* Structure: pop a main menu function
 * Add support for multiple LDM greeters (and DMs)
 """
 
@@ -21,7 +23,45 @@ from typing import List, Generator, Tuple
 from utils import banner, pr, is_image
 
 DIRECTORY = '/home/maximus/wallpapers'
-LDM_GTK_CONF = '/etc/lightdm/lightdm-gtk-greeter.conf'
+
+
+class LdmGtk:
+    LDM_GTK_CONF = '/etc/lightdm/lightdm-gtk-greeter.conf'
+
+    @staticmethod
+    def get_bg() -> str:
+        """
+        Fetch the background image of the LDM's GTK greeter from the config file
+        :return: Full path to the background image
+        """
+        with open(LdmGtk.LDM_GTK_CONF) as ldm_file:
+            for line in ldm_file:
+                if line.startswith('background'):
+                    return line.strip().split(' ')[2]
+        raise LookupError("[ERR] Couldn't find the LDM greeter's background!")
+
+    @staticmethod
+    def set_bg(win, ldm_bg_name, wall_name) -> bool:
+        """
+        Set the background image of the LDM's GTK greeter in the config file
+        :return: True on success
+        """
+        if ldm_bg_name == wall_name:
+            win.addstr('[!] Cannot change DM background to the same one!\n', curses.color_pair(5))
+            win.getkey()
+            return False
+
+        try:
+            check_call(f"sudo sed -i 's/{ldm_bg_name}/{wall_name}/g' " + LdmGtk.LDM_GTK_CONF, shell=True)
+        except (KeyboardInterrupt, PermissionError, CalledProcessError):
+            win.addstr("[X] An external error occurred while change DM's background!\n",
+                       curses.color_pair(2))
+            win.getkey()
+            return False
+
+        win.addstr('[+] Lock-screen background replaced!\n', curses.color_pair(3))
+        win.getkey()
+        return True
 
 
 def clear_win(win) -> None:
@@ -39,7 +79,7 @@ def get_cmd(monitor_id: int) -> List[str]:
     The system command which will return path of monitor's wallpaper
     """
     return ['xfconf-query', '-c', 'xfce4-desktop', '-p',
-            '/backdrop/screen0/monitor%d/workspace0/last-image' % monitor_id]
+            f'/backdrop/screen0/monitor{monitor_id}/workspace0/last-image']
 
 
 def apply(name, mon_id) -> None:
@@ -51,41 +91,6 @@ def apply(name, mon_id) -> None:
     """
     cmd = get_cmd(mon_id) + ['-s', os.path.join(DIRECTORY, name)]
     call(cmd)
-
-
-def get_ldm_bg() -> str:
-    """
-    Fetch the background image of the LDM's GTK greeter from the config file
-    :return: Full path to the background image
-    """
-    with open(LDM_GTK_CONF) as ldm_file:
-        for line in ldm_file:
-            if line.startswith('background'):
-                return line.strip().split(' ')[2]
-    raise LookupError("[ERR] Couldn't find the LDM greeter's background!")
-
-
-def set_ldm_bg(win, ldm_bg_name, wall_name) -> bool:
-    """
-    Set the background image of the LDM's GTK greeter in the config file
-    :return: True on success
-    """
-    if ldm_bg_name == wall_name:
-        win.addstr('[!] Cannot change DM background to the same one!\n', curses.color_pair(5))
-        win.getkey()
-        return False
-
-    try:
-        check_call("sudo sed -i 's/%s/%s/g' " % (ldm_bg_name, wall_name) + LDM_GTK_CONF, shell=True)
-    except (KeyboardInterrupt, PermissionError, CalledProcessError):
-        win.addstr("[X] An external error occurred while change DM's background!\n",
-                   curses.color_pair(2))
-        win.getkey()
-        return False
-
-    win.addstr('[+] Lock-screen background replaced!\n', curses.color_pair(3))
-    win.getkey()
-    return True
 
 
 def reset_permissions(avail: tuple, ldm_bg_path: str) -> None:
@@ -140,8 +145,7 @@ def get_current_wall(win, monitor_id: int, available: tuple) -> Tuple[str, int]:
         return name, available.index(name)
 
     except ValueError:
-        win.addstr('[X] Current wall "%s" not found in %s\n' %
-                   (name, DIRECTORY), curses.color_pair(2))
+        win.addstr(f'[X] Current wall "{name}" not found in {DIRECTORY}\n', curses.color_pair(2))
         win.addstr('[+] Press [R] to reset to the first image', curses.color_pair(5))
         if win.getkey() != 'r':
             exit(1)
@@ -165,7 +169,7 @@ def main(win) -> None:
     curses.init_pair(5, curses.COLOR_YELLOW, -1)
 
     # Get 'LDM GTK greeter' wallpaper
-    ldm_bg_path = get_ldm_bg()
+    ldm_bg_path = LdmGtk.get_bg()
 
     # Get available
     available = tuple(collect_available())
@@ -181,7 +185,7 @@ def main(win) -> None:
         clear_win(win)
 
         # Get current wallpaper
-        current_name, current_id = get_current_wall(win, mon_id, available)
+        current_name, current_id = get_current_wall(win, mons[mon_id], available)
 
         while 1:  # Inner Loop
             clear_win(win)
@@ -189,10 +193,9 @@ def main(win) -> None:
             # show info
             if len(mons) > 1:
                 win.addstr('[+] Using monitor: ')
-                win.addstr('%s\n' % mons[mon_id], curses.color_pair(3))
+                win.addstr(f'{mons[mon_id]}\n', curses.color_pair(3))
             win.addstr('[+] Current wall: ')
-            win.addstr('%s (%d/%d)\n' % (current_name, current_id + 1,
-                                         len(available)), curses.color_pair(3))
+            win.addstr(f'{current_name} ({current_id + 1}/{len(available)})\n', curses.color_pair(3))
 
             key = str(win.getkey()).lower()
             if not key:
@@ -205,7 +208,7 @@ def main(win) -> None:
                     mon_id = 0
                 break  # Back to monitor loop
 
-            if key == 'r':
+            if key == 'r':  # Random
                 current_id = randint(0, len(available))
             elif key == 'key_left':
                 current_id -= 1
@@ -219,7 +222,7 @@ def main(win) -> None:
             # DM background
             elif key == 'l':
                 new_bg = available[current_id]
-                if not set_ldm_bg(win, os.path.split(ldm_bg_path)[1], new_bg):
+                if not LdmGtk.set_bg(win, os.path.split(ldm_bg_path)[1], new_bg):
                     continue
 
                 ldm_bg_path = os.path.join(DIRECTORY, new_bg)
@@ -227,7 +230,7 @@ def main(win) -> None:
                 continue
 
             # Application
-            apply(available[current_id], mon_id)
+            apply(available[current_id], mons[mon_id])
 
 
 if __name__ == '__main__':
