@@ -21,50 +21,13 @@ import os
 import stat
 from random import randint
 from subprocess import check_output, check_call, call, CalledProcessError
-from typing import List, Generator, Tuple
+from typing import List, Iterator, Tuple
 
 from utils import banner, pr, is_image
 
+from ldm_gtk import LdmGtk
+
 DIRECTORY = '/home/maximus/wallpapers'
-
-
-class LdmGtk:
-    LDM_GTK_CONF = '/etc/lightdm/lightdm-gtk-greeter.conf'
-
-    @staticmethod
-    def get_bg() -> str:
-        """
-        Fetch the background image of the LDM's GTK greeter from the config file
-        :return: Full path to the background image
-        """
-        with open(LdmGtk.LDM_GTK_CONF) as ldm_file:
-            for line in ldm_file:
-                if line.startswith('background'):
-                    return line.strip().split(' ')[2]
-        raise LookupError("[ERR] Couldn't find the LDM greeter's background!")
-
-    @staticmethod
-    def set_bg(win, ldm_bg_name, wall_name) -> bool:
-        """
-        Set the background image of the LDM's GTK greeter in the config file
-        :return: True on success
-        """
-        if ldm_bg_name == wall_name:
-            win.addstr('[!] Cannot change DM background to the same one!\n', curses.color_pair(5))
-            win.getkey()
-            return False
-
-        try:
-            check_call(f"sudo sed -i 's/{ldm_bg_name}/{wall_name}/g' " + LdmGtk.LDM_GTK_CONF, shell=True)
-        except (KeyboardInterrupt, PermissionError, CalledProcessError):
-            win.addstr("[X] An external error occurred while change DM's background!\n",
-                       curses.color_pair(2))
-            win.getkey()
-            return False
-
-        win.addstr('[+] Lock-screen background replaced!\n', curses.color_pair(3))
-        win.getkey()
-        return True
 
 
 def clear_win(win) -> None:
@@ -111,7 +74,7 @@ def reset_permissions(avail: tuple, ldm_bg_path: str) -> None:
         os.chmod(path, perm)
 
 
-def collect_available() -> Generator[str, str, None]:
+def collect_available() -> Iterator[str]:
     """
     Collect available images in the specified directory
     :return: File-names
@@ -121,14 +84,17 @@ def collect_available() -> Generator[str, str, None]:
             yield wall
 
 
-def collect_monitors() -> Generator[str, str, None]:
+def collect_monitors() -> Iterator[list]:
     """
     Collect connected monitors, via xRandr
     :return: Monitor names
     """
     for line in check_output('xrandr').decode().split('\n'):
         if 'connected' in line:
-            yield line.split(' ')[0]
+            seg = line.split(' ')
+            if 'disconnected' in seg:
+                continue
+            yield seg[0]
 
 
 def get_current_wall(win, monitor_id: int, available: tuple) -> Tuple[str, int]:
@@ -148,8 +114,10 @@ def get_current_wall(win, monitor_id: int, available: tuple) -> Tuple[str, int]:
         return name, available.index(name)
 
     except ValueError:
-        win.addstr(f'[X] Current wall "{name}" not found in {DIRECTORY}\n', curses.color_pair(2))
-        win.addstr('[+] Press [R] to reset to the first image', curses.color_pair(5))
+        win.addstr(
+            f'[X] Current wall "{name}" not found in {DIRECTORY}\n', curses.color_pair(2))
+        win.addstr('[+] Press [R] to reset to the first image',
+                   curses.color_pair(5))
         if win.getkey() != 'r':
             exit(1)
 
@@ -184,56 +152,59 @@ def main(win) -> None:
     mon_id = 0
     mons = tuple(collect_monitors())
 
-    while 1:  # Monitor Loop
+    # while 1:  # Monitor Loop
+    #     clear_win(win)
+
+    while 1:  # Inner Loop
         clear_win(win)
 
         # Get current wallpaper
-        current_name, current_id = get_current_wall(win, mons[mon_id], available)
+        current_name, current_id = get_current_wall(
+            win, mons[mon_id], available)
 
-        while 1:  # Inner Loop
-            clear_win(win)
+        # show info
+        if len(mons) > 1:
+            win.addstr('[+] Using monitor: ')
+            win.addstr(f'{mons[mon_id]}\n', curses.color_pair(3))
+        win.addstr('[+] Current wall: ')
+        win.addstr(
+            f'{current_name} ({current_id + 1}/{len(available)})\n', curses.color_pair(3))
 
-            # show info
-            if len(mons) > 1:
-                win.addstr('[+] Using monitor: ')
-                win.addstr(f'{mons[mon_id]}\n', curses.color_pair(3))
-            win.addstr('[+] Current wall: ')
-            win.addstr(f'{current_name} ({current_id + 1}/{len(available)})\n', curses.color_pair(3))
-
-            key = str(win.getkey()).lower()
-            if not key:
+        key = str(win.getkey()).lower()
+        if not key:
+            continue
+        elif key in ('x', 'q'):
+            return
+        elif key == 'm':
+            if len(mons) == 1:
                 continue
-            elif key in ('x', 'q'):
-                return
-            elif key == 'm':
-                mon_id += 1
-                if mon_id >= len(mons):
-                    mon_id = 0
-                break  # Back to monitor loop
+            mon_id += 1
+            if mon_id >= len(mons):
+                mon_id = 0
+            continue
+        elif key == 'r':  # Random
+            current_id = randint(0, len(available))
+        elif key == 'key_left':
+            current_id -= 1
+            if current_id < 0:
+                current_id = len(available) - 1
+        elif key == 'key_right':
+            current_id += 1
+            if current_id >= len(available):
+                current_id = 0
 
-            if key == 'r':  # Random
-                current_id = randint(0, len(available))
-            elif key == 'key_left':
-                current_id -= 1
-                if current_id < 0:
-                    current_id = len(available) - 1
-            elif key == 'key_right':
-                current_id += 1
-                if current_id >= len(available):
-                    current_id = 0
-
-            # DM background
-            elif key == 'l':
-                new_bg = available[current_id]
-                if not LdmGtk.set_bg(win, os.path.split(ldm_bg_path)[1], new_bg):
-                    continue
-
-                ldm_bg_path = os.path.join(DIRECTORY, new_bg)
-                reset_permissions(available, ldm_bg_path)
+        # DM background
+        elif key == 'l':
+            new_bg = available[current_id]
+            if not LdmGtk.set_bg(win, os.path.split(ldm_bg_path)[1], new_bg):
                 continue
 
-            # Application
-            apply(available[current_id], mons[mon_id])
+            ldm_bg_path = os.path.join(DIRECTORY, new_bg)
+            reset_permissions(available, ldm_bg_path)
+            continue
+
+        # Application
+        apply(available[current_id], mons[mon_id])
 
 
 if __name__ == '__main__':
