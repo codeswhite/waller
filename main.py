@@ -19,15 +19,14 @@ TODO:
 import curses
 import os
 import stat
-from random import randint
+import random
 from subprocess import check_output, check_call, call, CalledProcessError
 from typing import List, Iterator, Tuple
 
 from utils import banner, pr, is_image
 
 from ldm_gtk import LdmGtk
-
-DIRECTORY = '/home/maximus/wallpapers'
+from conf import Config
 
 
 def clear_win(win) -> None:
@@ -48,18 +47,18 @@ def get_cmd(monitor_id: int) -> List[str]:
             f'/backdrop/screen0/monitor{monitor_id}/workspace0/last-image']
 
 
-def apply(name, mon_id) -> None:
+def apply(path, mon_id) -> None:
     """
     The application function
 
-    :param name: Image name in the directory
+    :param path: Image absolute path
     :param mon_id: Desired monitor ID
     """
-    cmd = get_cmd(mon_id) + ['-s', os.path.join(DIRECTORY, name)]
+    cmd = get_cmd(mon_id) + ['-s', path]
     call(cmd)
 
 
-def reset_permissions(avail: tuple, ldm_bg_path: str) -> None:
+def reset_permissions(current_dir: str, avail: tuple, ldm_bg_path: str) -> None:
     """
     Sets proper permissions [400] for all the images
      and [404] for the DM background image
@@ -67,20 +66,21 @@ def reset_permissions(avail: tuple, ldm_bg_path: str) -> None:
     :param ldm_bg_path: DM's background image path
     """
     for wall in avail:
-        path = os.path.join(DIRECTORY, wall)
+        path = os.path.join(current_dir, wall)
         perm = stat.S_IRUSR
         if path == ldm_bg_path:
             perm |= stat.S_IROTH
         os.chmod(path, perm)
 
 
-def collect_available() -> Iterator[str]:
+def collect_available(current_dir: str) -> Iterator[str]:
     """
     Collect available images in the specified directory
+    :param current_dir: Current wallpapers directory
     :return: File-names
     """
-    for wall in os.listdir(DIRECTORY):
-        if is_image(os.path.join(DIRECTORY, wall)):
+    for wall in os.listdir(current_dir):
+        if is_image(os.path.join(current_dir, wall)):
             yield wall
 
 
@@ -97,12 +97,13 @@ def collect_monitors() -> Iterator[list]:
             yield seg[0]
 
 
-def get_current_wall(win, monitor_id: int, available: tuple) -> Tuple[str, int]:
+def get_current_wall(win, current_dir: str, monitor_id: int, available: tuple) -> Tuple[str, int]:
     """
     Find currently used wallpaper for the specific monitor-ID and return its name,
     as well as the index of the file in the directory
 
     :param win: Curses window handle
+    :param current_dir: Current wallpapers directory
     :param monitor_id: Specified monitor
     :param available: Available images
     :return: A tuple of (IMG-NAME, IMG-ID)
@@ -115,7 +116,7 @@ def get_current_wall(win, monitor_id: int, available: tuple) -> Tuple[str, int]:
 
     except ValueError:
         win.addstr(
-            f'[X] Current wall "{name}" not found in {DIRECTORY}\n', curses.color_pair(2))
+            f'[X] Current wall "{name}" not found in {current_dir}\n', curses.color_pair(2))
         win.addstr('[+] Press [R] to reset to the first image',
                    curses.color_pair(5))
         if win.getkey() != 'r':
@@ -124,7 +125,7 @@ def get_current_wall(win, monitor_id: int, available: tuple) -> Tuple[str, int]:
         # Set current to first
         current_id = 0
         name = available[current_id]
-        apply(name, monitor_id)
+        apply(os.path.join(current_dir, name), monitor_id)
         return name, current_id
 
 
@@ -139,14 +140,18 @@ def main(win) -> None:
     curses.init_pair(4, curses.COLOR_BLUE, -1)
     curses.init_pair(5, curses.COLOR_YELLOW, -1)
 
+    # Init config
+    conf = Config('/home/maximus/.config/wall.json')
+    current_dir = conf.current()
+
     # Get 'LDM GTK greeter' wallpaper
     ldm_bg_path = LdmGtk.get_bg()
 
     # Get available
-    available = tuple(collect_available())
+    available = tuple(collect_available(current_dir))
 
     # Set permissions
-    reset_permissions(available, ldm_bg_path)
+    reset_permissions(current_dir, available, ldm_bg_path)
 
     # Check monitors
     mon_id = 0
@@ -160,7 +165,7 @@ def main(win) -> None:
 
         # Get current wallpaper
         current_name, current_id = get_current_wall(
-            win, mons[mon_id], available)
+            win, current_dir, mons[mon_id], available)
 
         # show info
         if len(mons) > 1:
@@ -189,7 +194,7 @@ def main(win) -> None:
                 mon_id = 0
             continue
         elif key == 'r':  # Random
-            current_id = randint(0, len(available))
+            current_id = random.randint(0, len(available))
         elif key == 'key_left':
             current_id -= 1
             if current_id < 0:
@@ -205,12 +210,12 @@ def main(win) -> None:
             if not LdmGtk.set_bg(win, os.path.split(ldm_bg_path)[1], new_bg):
                 continue
 
-            ldm_bg_path = os.path.join(DIRECTORY, new_bg)
-            reset_permissions(available, ldm_bg_path)
+            ldm_bg_path = os.path.join(current_dir, new_bg)
+            reset_permissions(current_dir, available, ldm_bg_path)
             continue
 
         # Application
-        apply(available[current_id], mons[mon_id])
+        apply(os.path.join(current_dir, available[current_id]), mons[mon_id])
 
 
 if __name__ == '__main__':
