@@ -20,10 +20,11 @@ import curses
 import os
 import stat
 import random
+from pathlib import PosixPath
 from subprocess import check_output, check_call, call, CalledProcessError
 from typing import List, Iterator, Tuple
 
-from utils import banner, pr, is_image
+from utils import banner, pr
 
 from ldm_gtk import LdmGtk
 from conf import Config
@@ -47,7 +48,7 @@ def get_cmd(monitor_id: int) -> List[str]:
             f'/backdrop/screen0/monitor{monitor_id}/workspace0/last-image']
 
 
-def apply(path, mon_id) -> None:
+def apply(path: PosixPath, mon_id: int) -> None:
     """
     The application function
 
@@ -58,7 +59,7 @@ def apply(path, mon_id) -> None:
     call(cmd)
 
 
-def reset_permissions(current_dir: str, avail: tuple, ldm_bg_path: str) -> None:
+def reset_permissions(current_dir: PosixPath, avail: tuple, ldm_bg_path: PosixPath) -> None:
     """
     Sets proper permissions [400] for all the images
      and [404] for the DM background image
@@ -66,21 +67,42 @@ def reset_permissions(current_dir: str, avail: tuple, ldm_bg_path: str) -> None:
     :param ldm_bg_path: DM's background image path
     """
     for wall in avail:
-        path = os.path.join(current_dir, wall)
+        path = current_dir/wall
         perm = stat.S_IRUSR
         if path == ldm_bg_path:
             perm |= stat.S_IROTH
         os.chmod(path, perm)
 
 
-def collect_available(current_dir: str) -> Iterator[str]:
+def img_format(image_path: PosixPath) -> (str, None):
+    """
+    Checks the file signature (magic number)
+            for an image
+
+    :param image_path: The path to the image
+    :return: True if the image is PNG or JPG
+    """
+
+    signatures = {'JPG': 'ffd8ff',
+                  'PNG': '89504e',
+                  'GIF': '474946'}
+
+    with image_path.open('rb') as img_file:
+        signature = img_file.read(3).hex()
+        for sig in signatures:
+            if signature == signatures[sig]:
+                return sig
+    return None
+
+
+def collect_available(current_dir: PosixPath) -> Iterator[str]:
     """
     Collect available images in the specified directory
     :param current_dir: Current wallpapers directory
     :return: File-names
     """
     for wall in os.listdir(current_dir):
-        if is_image(os.path.join(current_dir, wall)):
+        if img_format(current_dir / wall):
             yield wall
 
 
@@ -97,7 +119,7 @@ def collect_monitors() -> Iterator[list]:
             yield seg[0]
 
 
-def get_current_wall(win, current_dir: str, monitor_id: int, available: tuple) -> Tuple[str, int]:
+def get_current_wall(win, current_dir: PosixPath, monitor_id: int, available: tuple) -> Tuple[str, int]:
     """
     Find currently used wallpaper for the specific monitor-ID and return its name,
     as well as the index of the file in the directory
@@ -142,10 +164,10 @@ def main(win) -> None:
 
     # Init config
     conf = Config('/home/maximus/.config/wall.json')
-    current_dir = conf.current()
+    current_dir = PosixPath(conf.current())
 
     # Get 'LDM GTK greeter' wallpaper
-    ldm_bg_path = LdmGtk.get_bg()
+    ldm_bg_path = PosixPath(LdmGtk.get_bg())
 
     # Get available
     available = tuple(collect_available(current_dir))
@@ -207,15 +229,15 @@ def main(win) -> None:
         # DM background
         elif key == 'l':
             new_bg = available[current_id]
-            if not LdmGtk.set_bg(win, os.path.split(ldm_bg_path)[1], new_bg):
+            if not LdmGtk.set_bg(win, ldm_bg_path.split()[1], new_bg):
                 continue
 
-            ldm_bg_path = os.path.join(current_dir, new_bg)
+            ldm_bg_path = current_dir / new_bg
             reset_permissions(current_dir, available, ldm_bg_path)
             continue
 
         # Application
-        apply(os.path.join(current_dir, available[current_id]), mons[mon_id])
+        apply(current_dir / available[current_id], mons[mon_id])
 
 
 if __name__ == '__main__':

@@ -19,7 +19,7 @@ class LdmGtk:
             "[ERR] Couldn't locate the LDM greeter's background!")
 
     @staticmethod
-    def set_bg(win, ldm_bg_name, wall_name) -> bool:
+    def set_bg(win, ldm_bg_name :str, wall_name:str) -> bool:
         """
         Set the background image of the LDM's GTK greeter in the config file
         :return: True on success
