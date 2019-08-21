@@ -163,8 +163,8 @@ def main(win) -> None:
     curses.init_pair(5, curses.COLOR_YELLOW, -1)
 
     # Init config
-    conf = Config('/home/maximus/.config/wall.json')
-    current_dir = PosixPath(conf.current())
+    config = Config('/home/maximus/.config/wall.json')
+    current_dir = PosixPath(config.current())
 
     # Get 'LDM GTK greeter' wallpaper
     ldm_bg_path = PosixPath(LdmGtk.get_bg())
@@ -179,65 +179,67 @@ def main(win) -> None:
     mon_id = 0
     mons = tuple(collect_monitors())
 
-    # while 1:  # Monitor Loop
-    #     clear_win(win)
+    try:
+        while 1:  # Inner Loop
+            clear_win(win)
 
-    while 1:  # Inner Loop
-        clear_win(win)
+            # Get current wallpaper
+            current_name, current_id = get_current_wall(
+                win, current_dir, mons[mon_id], available)
 
-        # Get current wallpaper
-        current_name, current_id = get_current_wall(
-            win, current_dir, mons[mon_id], available)
+            # show info
+            if len(mons) > 1:
+                win.addstr('[*] Using monitor: ')
+                win.addstr(f'{mons[mon_id]}\n', curses.color_pair(3))
+            win.addstr('[+] Current wall: ')
+            win.addstr(
+                f'({current_id + 1}/{len(available)}) {current_name}\n', curses.color_pair(3))
 
-        # show info
-        if len(mons) > 1:
-            win.addstr('[*] Using monitor: ')
-            win.addstr(f'{mons[mon_id]}\n', curses.color_pair(3))
-        win.addstr('[+] Current wall: ')
-        win.addstr(
-            f'({current_id + 1}/{len(available)}) {current_name}\n', curses.color_pair(3))
+            win.addstr('\n>> Controls: [<] or [>] or [R]\n' +
+                       '[L] to set LDM GTK background\n')
+            if len(mons) > 1:
+                win.addstr('[M] to switch monitor\n', curses.color_pair(5))
+            win.addstr('[X] or [Q] to exit\n', curses.color_pair(5))
 
-        win.addstr('\n>> Controls: [<] or [>] or [R]\n' +
-                   '[L] to set LDM GTK background\n')
-        if len(mons) > 1:
-            win.addstr('[M] to switch monitor\n', curses.color_pair(5))
-        win.addstr('[X] or [Q] to exit\n', curses.color_pair(5))
-
-        key = str(win.getkey()).lower()
-        if not key:
-            continue
-        elif key in ('x', 'q'):
-            return
-        elif key == 'm':
-            if len(mons) == 1:
+            key = str(win.getkey()).lower()
+            if not key:
                 continue
-            mon_id += 1
-            if mon_id >= len(mons):
-                mon_id = 0
-            continue
-        elif key == 'r':  # Random
-            current_id = random.randint(0, len(available))
-        elif key == 'key_left':
-            current_id -= 1
-            if current_id < 0:
-                current_id = len(available) - 1
-        elif key == 'key_right':
-            current_id += 1
-            if current_id >= len(available):
-                current_id = 0
+            elif key in ('x', 'q'):
+                return
+            elif key == 'm':
+                if len(mons) == 1:
+                    continue
+                mon_id += 1
+                if mon_id >= len(mons):
+                    mon_id = 0
+                continue
+            elif key == 'r':  # Random
+                current_id = random.randint(0, len(available))
+            elif key == 'key_left':
+                current_id -= 1
+                if current_id < 0:
+                    current_id = len(available) - 1
+            elif key == 'key_right':
+                current_id += 1
+                if current_id >= len(available):
+                    current_id = 0
 
-        # DM background
-        elif key == 'l':
-            new_bg = available[current_id]
-            if not LdmGtk.set_bg(win, ldm_bg_path.split()[1], new_bg):
+            # DM background
+            elif key == 'l':
+                new_bg = available[current_id]
+                if not LdmGtk.set_bg(win, ldm_bg_path.split()[1], new_bg):
+                    continue
+
+                ldm_bg_path = current_dir / new_bg
+                reset_permissions(current_dir, available, ldm_bg_path)
                 continue
 
-            ldm_bg_path = current_dir / new_bg
-            reset_permissions(current_dir, available, ldm_bg_path)
-            continue
-
-        # Application
-        apply(current_dir / available[current_id], mons[mon_id])
+            # Application
+            apply(current_dir / available[current_id], mons[mon_id])
+    except KeyboardInterrupt:
+        pass
+    finally:
+        config.save()
 
 
 if __name__ == '__main__':
@@ -247,8 +249,6 @@ if __name__ == '__main__':
 
     try:
         curses.wrapper(main)
-    except KeyboardInterrupt:
-        pass
 
     except curses.error:
         pr('An curses error occurred!', 'X')

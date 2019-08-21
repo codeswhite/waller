@@ -16,7 +16,7 @@ class Config(dict):
         except json.JSONDecodeError:
             return
 
-    def save_conf(self) -> None:
+    def save(self) -> None:
         with open(self.conf_path, 'w') as f:
             json.dump(self, f)
 
