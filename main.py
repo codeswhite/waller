@@ -164,11 +164,17 @@ def main(win) -> None:
 
         # show info
         if len(mons) > 1:
-            win.addstr('[+] Using monitor: ')
+            win.addstr('[*] Using monitor: ')
             win.addstr(f'{mons[mon_id]}\n', curses.color_pair(3))
         win.addstr('[+] Current wall: ')
         win.addstr(
-            f'{current_name} ({current_id + 1}/{len(available)})\n', curses.color_pair(3))
+            f'({current_id + 1}/{len(available)}) {current_name}\n', curses.color_pair(3))
+
+        win.addstr('\n>> Controls: [<] or [>] or [R]\n' +
+                   '[L] to set LDM GTK background\n')
+        if len(mons) > 1:
+            win.addstr('[M] to switch monitor\n', curses.color_pair(5))
+        win.addstr('[X] or [Q] to exit\n', curses.color_pair(5))
 
         key = str(win.getkey()).lower()
         if not key:
