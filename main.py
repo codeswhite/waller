@@ -11,6 +11,9 @@ TODO:
 * Add commands:
 * Structure: pop a main menu function
 * Add support for multiple LDM greeters (and DMs)
+* Fix: current image name not changing
+* Fix: when pressing [M] check for the existance of the next monitor
+  and pop a message for the user if the monitor not present
 """
 
 import curses
