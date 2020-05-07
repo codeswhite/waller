@@ -19,7 +19,7 @@ class LdmGtk:
             "[ERR] Couldn't locate the LDM greeter's background!")
 
     @staticmethod
-    def set_bg(win, ldm_bg_name :str, wall_name:str) -> bool:
+    def set_bg(win, ldm_bg_name: str, wall_name: str) -> bool:
         """
         Set the background image of the LDM's GTK greeter in the config file
         :return: True on success
@@ -31,8 +31,8 @@ class LdmGtk:
             return False
 
         try:
-            subprocess.check_call(f"sudo sed -i 's/{ldm_bg_name}/{wall_name}/g' " + LdmGtk.LDM_GTK_CONF,
-                                  shell=True)
+            subprocess.check_call(
+                ['sudo', 'sed', '-i', f"s/{ldm_bg_name}/{wall_name}/g", LdmGtk.LDM_GTK_CONF])
         except (KeyboardInterrupt, PermissionError, subprocess.CalledProcessError):
             win.addstr("[X] An external error occurred while change DM's background!\n",
                        curses.color_pair(2))
