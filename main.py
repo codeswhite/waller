@@ -8,18 +8,14 @@
 3 == Running as root (don't)
 
 TODO:
-* Add commands:
-* Structure: pop a main menu function
 * Add support for multiple LDM greeters (and DMs)
-* Fix: current image name not changing
-* Fix: when pressing [M] check for the existance of the next monitor
-  and pop a message for the user if the monitor not present
 """
 
 import curses
 import os
 import stat
 import random
+import sys
 from pathlib import PosixPath
 from subprocess import check_output, check_call, call, CalledProcessError
 from typing import List, Iterator, Tuple
@@ -28,6 +24,15 @@ from utils import banner, pr
 
 from ldm_gtk import LdmGtk
 from conf import Config
+
+
+def parse_args() -> (str, None):
+    if len(sys.argv) < 2:
+        return
+
+    run_mode = sys.argv[1].lower()
+    if run_mode in ('r', 'n', 'p'):
+        return run_mode
 
 
 def get_cmd(monitor_name: str) -> List[str]:
@@ -92,50 +97,55 @@ class Wall:
         self.mon_id = 0
         self.mons = tuple(collect_monitors())
 
+        if win is None:
+            return
         try:
-            while 1:  # Inner Loop
-                self.clear_win()
-
-                # Get current wallpaper
-                current_name, current_id = self.get_current_wall()
-
-                self.show_info(
-                    f'({current_id + 1}/{len(self.available)}) {current_name}\n')
-
-                key = str(win.getkey()).lower()
-                if not key:
-                    continue
-                elif key in ('x', 'q'):
-                    return
-                elif key == 'm':
-                    if len(self.mons) == 1:
-                        continue
-                    self.mon_id += 1
-                    if self.mon_id >= len(self.mons):
-                        self.mon_id = 0
-                    continue
-                elif key == 'r':  # Random
-                    current_id = random.randint(0, len(self.available))
-                elif key == 'key_left':
-                    current_id -= 1
-                    if current_id < 0:
-                        current_id = len(self.available) - 1
-                elif key == 'key_right':
-                    current_id += 1
-                    if current_id >= len(self.available):
-                        current_id = 0
-                elif key == 'l':  # DM background
-                    self.change_ldm_bg(self.available[current_id])
-                    continue
-                else:
-                    continue
-
-                # Application
-                self.apply(current_id)
+            self.interactive()
         except KeyboardInterrupt:
             pass
         finally:
             config.save()
+
+    def interactive(self):
+        while 1:  # Inner Loop
+            self.clear_win()
+
+            # Get current wallpaper
+            current_name, current_id = self.get_current_wall()
+
+            self.show_info(
+                f'({current_id + 1}/{len(self.available)}) {current_name}\n')
+
+            key = str(self.win.getkey()).lower()
+            if not key:
+                continue
+            elif key in ('x', 'q'):
+                return
+            elif key == 'm':
+                if len(self.mons) == 1:
+                    continue
+                self.mon_id += 1
+                if self.mon_id >= len(self.mons):
+                    self.mon_id = 0
+                continue
+            elif key == 'r':  # Random
+                current_id = random.randint(0, len(self.available))
+            elif key == 'key_left':
+                current_id -= 1
+                if current_id < 0:
+                    current_id = len(self.available) - 1
+            elif key == 'key_right':
+                current_id += 1
+                if current_id >= len(self.available):
+                    current_id = 0
+            elif key == 'l':  # DM background
+                self.change_ldm_bg(self.available[current_id])
+                continue
+            else:
+                continue
+
+            # Application
+            self.apply(current_id)
 
     def get_mon(self) -> str:
         return self.mons[self.mon_id]
@@ -235,7 +245,7 @@ class Wall:
             return name, current_id
 
 
-def main(win: curses.window) -> None:
+def curses_entry(win: curses.window) -> None:
     # Curses initialization
     curses.use_default_colors()
     curses.init_pair(2, curses.COLOR_RED, -1)
@@ -251,11 +261,33 @@ if __name__ == '__main__':
         pr("This program shouldn't run as root!", 'X')
         exit(3)
 
-    try:
-        curses.wrapper(main)
+    # Parse args
+    batch = parse_args()
 
-    except curses.error:
-        pr('An curses error occurred!', 'X')
-        from traceback import print_exc
+    if batch:
+        # Batch mode
+        w = Wall(None)
+        # Get current wallpaper
+        _, current_id = w.get_current_wall()
 
-        print_exc()
+        if batch == 'r':
+            current_id = random.randint(0, len(w.available))
+        elif batch == 'n':
+            current_id += 1
+            if current_id >= len(w.available):
+                current_id = 0
+        elif batch == 'p':
+            current_id -= 1
+            if current_id < 0:
+                current_id = len(w.available) - 1
+        w.apply(current_id)
+
+    else:
+        try:
+            curses.wrapper(curses_entry)
+
+        except curses.error:
+            pr('An curses error occurred!', 'X')
+            from traceback import print_exc
+
+            print_exc()
