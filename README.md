@@ -17,7 +17,6 @@ And here's a Windows script that downloads and sets the image of the day:
 
 Current requirements are:
  - xorg-xrandr: Screen discovery
- - python-interutils: CLI printing and config handling
 
 ### Install:
 

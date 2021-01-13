@@ -7,7 +7,7 @@ import os, sys
 
 from interutils import pr
 
-from .wallpy import curses_entry, Waller
+from .waller import curses_entry, Waller
 
 def parse_args() -> (str, None):
     if len(sys.argv) < 2:
@@ -20,7 +20,7 @@ def parse_args() -> (str, None):
 
 def main():
     if os.getuid() == 0:
-        pr("This program shouldn't run as root!", 'X')
+        print("[X] This program shouldn't run as root!")
         exit(3)
 
     # Parse args
@@ -49,7 +49,7 @@ def main():
             curses.wrapper(curses_entry)
 
         except curses.error:
-            pr('An curses error occurred!', 'X')
+            print('[X] An curses error occurred!')
             from traceback import print_exc
 
             print_exc()
