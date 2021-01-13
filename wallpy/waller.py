@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-# coding=utf-8
-
-"""
-[*] Return Codes:
-0 == OK
-1 == Wallpaper not found
-3 == Running as root (don't)
-
-TODO:
-* Add support for multiple LDM greeters (and DMs)
-"""
 
 import curses
 import os
@@ -20,19 +8,9 @@ from pathlib import PosixPath
 from subprocess import check_output, check_call, call, CalledProcessError
 from typing import List, Iterator, Tuple
 
-from utils import banner, pr
+from interutils import banner, pr, DictConfig
 
-from ldm_gtk import LdmGtk
-from conf import Config
-
-
-def parse_args() -> (str, None):
-    if len(sys.argv) < 2:
-        return
-
-    run_mode = sys.argv[1].lower()
-    if run_mode in ('r', 'n', 'p'):
-        return run_mode
+from .ldm_gtk import LdmGtk
 
 
 def get_cmd(monitor_name: str) -> List[str]:
@@ -75,14 +53,22 @@ def collect_monitors() -> Iterator[str]:
             yield line.split(' ')[0]
 
 
-class Wall:
+class Waller:
     def __init__(self, win):
         super().__init__()
         self.win = win
 
-        # Init config
-        config = Config('/home/maximus/.config/wall.json')
-        self.current_dir = PosixPath(config.current())
+        # Init config with default options
+        config = DictConfig(PosixPath.home().joinpath('.config', 'wall.json'),
+            {
+                'directories': [],
+                'current': -1,
+            })
+        if config['current'] == -1:
+            self.win.addstr('[X] Please initiate configuration file and then rerun this script')
+            return
+
+        self.current_dir = PosixPath(config['directories'][config['current']])
 
         # Get 'LDM GTK greeter' wallpaper
         self.ldm_bg_path = PosixPath(LdmGtk.get_bg())
@@ -253,41 +239,4 @@ def curses_entry(win: curses.window) -> None:
     curses.init_pair(4, curses.COLOR_BLUE, -1)
     curses.init_pair(5, curses.COLOR_YELLOW, -1)
 
-    Wall(win)
-
-
-if __name__ == '__main__':
-    if os.getuid() == 0:
-        pr("This program shouldn't run as root!", 'X')
-        exit(3)
-
-    # Parse args
-    batch = parse_args()
-
-    if batch:
-        # Batch mode
-        w = Wall(None)
-        # Get current wallpaper
-        _, current_id = w.get_current_wall()
-
-        if batch == 'r':
-            current_id = random.randint(0, len(w.available))
-        elif batch == 'n':
-            current_id += 1
-            if current_id >= len(w.available):
-                current_id = 0
-        elif batch == 'p':
-            current_id -= 1
-            if current_id < 0:
-                current_id = len(w.available) - 1
-        w.apply(current_id)
-
-    else:
-        try:
-            curses.wrapper(curses_entry)
-
-        except curses.error:
-            pr('An curses error occurred!', 'X')
-            from traceback import print_exc
-
-            print_exc()
+    Waller(win)
