@@ -13,7 +13,7 @@ setuptools.setup(
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
-        "Operating System :: Linux",
+        "Operating System :: Unix",
     ],
     keywords='',
     python_requires='>=3.6',
