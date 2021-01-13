@@ -8,8 +8,6 @@ from pathlib import PosixPath
 from subprocess import check_output, check_call, call, CalledProcessError
 from typing import List, Iterator, Tuple
 
-from interutils import banner, pr, DictConfig
-
 from .ldm_gtk import LdmGtk
 
 
@@ -58,17 +56,14 @@ class Waller:
         super().__init__()
         self.win = win
 
-        # Init config with default options
-        config = DictConfig(PosixPath.home().joinpath('.config', 'wall.json'),
-            {
-                'directories': [],
-                'current': -1,
-            })
-        if config['current'] == -1:
-            self.win.addstr('[X] Please initiate configuration file and then rerun this script')
-            return
+        # Check monitors
+        self.mon_id = 0
+        self.mons = tuple(collect_monitors())
 
-        self.current_dir = PosixPath(config['directories'][config['current']])
+        # Get currently used wallaper
+        current_path = self.get_current_wall()
+        self.current_name = current_path.name
+        self.current_dir = current_path.parent.resolve()
 
         # Get 'LDM GTK greeter' wallpaper
         self.ldm_bg_path = PosixPath(LdmGtk.get_bg())
@@ -79,28 +74,25 @@ class Waller:
         # Set permissions
         self.reset_permissions()
 
-        # Check monitors
-        self.mon_id = 0
-        self.mons = tuple(collect_monitors())
-
         if win is None:
             return
         try:
             self.interactive()
         except KeyboardInterrupt:
             pass
-        finally:
-            config.save()
+        # finally:
+        #     config.save()
 
     def interactive(self):
         while 1:  # Inner Loop
-            self.clear_win()
+            self.win.clear()
 
             # Get current wallpaper
-            current_name, current_id = self.get_current_wall()
+            self.current_name = self.get_current_wall().name
+            current_id = self.get_current_id()
 
             self.show_info(
-                f'({current_id + 1}/{len(self.available)}) {current_name}\n')
+                f'({current_id + 1}/{len(self.available)}) {self.current_name}\n')
 
             key = str(self.win.getkey()).lower()
             if not key:
@@ -159,15 +151,6 @@ class Waller:
                             curses.color_pair(5))
         self.win.addstr('[X] or [Q] to exit\n', curses.color_pair(5))
 
-    def clear_win(self) -> None:
-        """
-        A simple function to clear the screen and print our banner :)
-        :param win: The curses window
-        :return: Nope
-        """
-        self.win.clear()
-        self.win.addstr(banner('Wall'), curses.color_pair(4))
-
     def change_ldm_bg(self, new_bg: str) -> None:
         if not LdmGtk.set_bg(self.win, self.ldm_bg_path.name, new_bg):
             return
@@ -199,26 +182,22 @@ class Waller:
             if img_format(self.current_dir / wall):
                 yield wall
 
-    def get_current_wall(self) -> Tuple[str, int]:
+    def get_current_wall(self) -> PosixPath:
         """
-        Find currently used wallpaper for the specific monitor-ID and return its name,
-        as well as the index of the file in the directory
-
-        :param win: Curses window handle
-        :param current_dir: Current wallpapers directory
-        :param monitor_id: Specified monitor
-        :param available: Available images
-        :return: A tuple of (IMG-NAME, IMG-ID)
+        :return: A Path to the current image of primary monitor
         """
-        name = os.path.split(check_output(
-            get_cmd(self.get_mon())).decode().strip())[1]
+        return PosixPath(check_output(get_cmd(self.get_mon())).decode().strip())
 
+    def get_current_id(self) -> int:
+        """
+        :return: index of current image among other images in the same directory
+        """
         try:
-            return name, self.available.index(name)
+            return self.available.index(self.current_name)
 
         except ValueError:
             self.win.addstr(
-                f'[X] Current wall "{name}" not found in {self.current_dir}\n', curses.color_pair(2))
+                f'[X] Current wall "{self.current_name}" not found in {self.current_dir}\n', curses.color_pair(2))
             self.win.addstr('[+] Press [R] to reset to the first image',
                             curses.color_pair(5))
             if self.win.getkey() != 'r':
@@ -226,9 +205,9 @@ class Waller:
 
             # Set current to first
             current_id = 0
-            name = self.available[current_id]
-            apply(current_dir / name, self.mon_id)
-            return name, current_id
+            self.current_name = self.available[current_id]
+            apply(self.current_dir / self.current_name, self.mon_id)
+            return current_id
 
 
 def curses_entry(win: curses.window) -> None:
