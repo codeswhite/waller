@@ -7,7 +7,7 @@ project_name = "waller"
 
 setuptools.setup(
     name=project_name,
-    version="0.3.4",
+    version="0.3.5",
     description="Python curses utility to cycle between desktop wallpapers",
     url=f"https://github.com/codeswhite/{project_name}",
     classifiers=[
