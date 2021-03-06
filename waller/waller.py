@@ -206,7 +206,7 @@ class Waller:
             # Set current to first
             current_id = 0
             self.current_name = self.available[current_id]
-            self.apply(self.current_dir / self.current_name, self.mon_id)
+            self.apply(0)
             return current_id
 
 
